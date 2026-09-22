@@ -1,148 +1,257 @@
-package com.example.preforge // Verifica tu paquete
+package com.example.preforge
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.room.Room
+import com.example.preforge.data.local.AppDatabase
+import com.example.preforge.data.local.QuestionEntity
 import com.example.preforge.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SimulatorScreen() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BackgroundGreen)
-            .padding(24.dp)
-    ) {
-        // 1. Encabezado: Pregunta actual y Cronómetro
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Description, contentDescription = "Pregunta", tint = DarkGreen)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Pregunta 4/20", fontWeight = FontWeight.Bold, color = DarkGreen)
-            }
+fun SimulatorScreen(onNavigateBack: () -> Unit) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-            // Botoncito del temporizador
-            Surface(
-                color = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.border(1.dp, LightGreen, RoundedCornerShape(16.dp))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Timer, contentDescription = "Tiempo", tint = DarkGreen, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "15:00", fontWeight = FontWeight.Bold, color = DarkGreen, fontSize = 14.sp)
-                }
-            }
+    // Estados de la interfaz
+    var listaPreguntas by remember { mutableStateOf<List<QuestionEntity>>(emptyList()) }
+    var indiceActual by remember { mutableStateOf(0) }
+    var puntuacion by remember { mutableStateOf(0) }
+    var simuladorTerminado by remember { mutableStateOf(false) }
+    var opcionSeleccionada by remember { mutableStateOf<String?>(null) }
+    var mostrarFeedback by remember { mutableStateOf(false) }
+    var cargando by remember { mutableStateOf(true) }
+
+    // Inicializar Room y cargar las preguntas al abrir la pantalla
+    LaunchedEffect(Unit) {
+        val db = Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java, "preforge_database"
+        ).build()
+
+        val preguntas = withContext(Dispatchers.IO) {
+            db.questionDao().getAllQuestions()
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        listaPreguntas = preguntas.shuffled() // Orden aleatorio para el examen
+        cargando = false
+    }
 
-        // 2. Barra de progreso
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(text = "Progreso Simulador", fontSize = 12.sp, color = PrimaryGreen)
-            Text(text = "20% completado", fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        LinearProgressIndicator(
-            progress = { 0.2f },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = DarkGreen,
-            trackColor = LightGreen,
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // 3. Etiqueta de la materia y Pregunta
-        Surface(
-            color = Color.White,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.border(1.dp, LightGreen, RoundedCornerShape(16.dp))
-        ) {
-            Text(
-                text = "BIOLOGÍA CELULAR",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = PrimaryGreen
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Simulador de Examen", color = DarkGreen, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Regresar", tint = DarkGreen)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BackgroundGreen)
             )
         }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundGreen)
+                .padding(paddingValues)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (cargando) {
+                Spacer(modifier = Modifier.height(100.dp))
+                CircularProgressIndicator(color = DarkGreen)
+                Text("Cargando preguntas de la base de datos...", modifier = Modifier.padding(top = 16.dp))
+                return@Column
+            }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            if (listaPreguntas.isEmpty()) {
+                Spacer(modifier = Modifier.height(100.dp))
+                Text(
+                    text = "No hay preguntas guardadas.\nVe al Dashboard y sube un apunte primero.",
+                    color = DarkGreen,
+                    textAlign = TextAlign.Center,
+                    fontSize = 16.sp
+                )
+                return@Column
+            }
 
-        Text(
-            text = "¿Cuál es la función principal de la mitocondria en la célula?",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = DarkGreen
-        )
+            if (simuladorTerminado) {
+                // PANTALLA DE RESULTADOS
+                Spacer(modifier = Modifier.height(50.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("¡Examen Terminado!", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Tu puntuación: $puntuacion / ${listaPreguntas.size}",
+                            fontSize = 20.sp,
+                            color = PrimaryGreen,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkGreen)
+                ) {
+                    Text("Volver al Dashboard", color = Color.White, fontSize = 16.sp)
+                }
+                return@Column
+            }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            // PANTALLA DEL CUESTIONARIO (Pregunta Activa)
+            val preguntaActual = listaPreguntas[indiceActual]
 
-        // 4. Opciones de respuesta
-        val opciones = listOf("A) Producir energía (ATP)", "B) Almacenar ADN", "C) Sintetizar proteínas", "D) Regular el pH celular")
+            Text(
+                text = "Pregunta ${indiceActual + 1} de ${listaPreguntas.size}",
+                fontSize = 14.sp,
+                color = PrimaryGreen,
+                modifier = Modifier.align(Alignment.Start)
+            )
 
-        opciones.forEach { opcion ->
-            OutlinedButton(
-                onClick = { /* Acción para seleccionar respuesta */ },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-                    .height(56.dp),
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, LightGreen),
-                shape = RoundedCornerShape(12.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = preguntaActual.topic.uppercase(),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Gray,
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Text(
-                    text = opcion,
+                    text = preguntaActual.text,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
                     color = DarkGreen,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Start
+                    modifier = Modifier.padding(20.dp)
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.weight(1f)) // Empuja los botones de abajo hasta el fondo
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // 5. Botones inferiores
-        Button(
-            onClick = { /* Siguiente */ },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text(text = "Siguiente Pregunta", color = Color.White, fontSize = 16.sp)
-        }
+            // Botones de opciones
+            val opciones = listOf(
+                "A" to preguntaActual.optionA,
+                "B" to preguntaActual.optionB,
+                "C" to preguntaActual.optionC,
+                "D" to preguntaActual.optionD
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            opciones.forEach { (letra, texto) ->
+                val esSeleccionada = opcionSeleccionada == letra
+                val esCorrecta = letra == preguntaActual.correctAnswer
 
-        TextButton(
-            onClick = { /* Pausar */ },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = "Pausar Simulador", color = PrimaryGreen, fontWeight = FontWeight.Bold)
+                // Lógica de colores para el feedback visual
+                val backgroundColor = when {
+                    !mostrarFeedback -> if (esSeleccionada) PrimaryGreen.copy(alpha = 0.2f) else Color.Transparent
+                    esCorrecta -> Color(0xFFD4EDDA) // Verde claro para la correcta
+                    esSeleccionada && !esCorrecta -> Color(0xFFF8D7DA) // Rojo claro para la incorrecta
+                    else -> Color.Transparent
+                }
+
+                val borderColor = when {
+                    !mostrarFeedback -> if (esSeleccionada) DarkGreen else Color.LightGray
+                    esCorrecta -> Color(0xFF28A745)
+                    esSeleccionada && !esCorrecta -> Color(0xFFDC3545)
+                    else -> Color.LightGray
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        if (!mostrarFeedback) opcionSeleccionada = letra
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).heightIn(min = 56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = backgroundColor),
+                    border = BorderStroke(1.dp, borderColor)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "$letra.",
+                            fontWeight = FontWeight.Bold,
+                            color = DarkGreen,
+                            modifier = Modifier.padding(end = 12.dp)
+                        )
+                        Text(
+                            text = texto,
+                            color = DarkGreen,
+                            textAlign = TextAlign.Start
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Botón de acción inferior (Calificar o Siguiente)
+            Button(
+                onClick = {
+                    if (!mostrarFeedback) {
+                        // Calificar
+                        if (opcionSeleccionada == preguntaActual.correctAnswer) {
+                            puntuacion++
+                        }
+                        mostrarFeedback = true
+                    } else {
+                        // Pasar a la siguiente
+                        if (indiceActual < listaPreguntas.size - 1) {
+                            indiceActual++
+                            opcionSeleccionada = null
+                            mostrarFeedback = false
+                        } else {
+                            simuladorTerminado = true
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = opcionSeleccionada != null,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkGreen)
+            ) {
+                Text(
+                    text = if (!mostrarFeedback) "Confirmar Respuesta" else if (indiceActual < listaPreguntas.size - 1) "Siguiente Pregunta" else "Finalizar Examen",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+            }
         }
     }
 }

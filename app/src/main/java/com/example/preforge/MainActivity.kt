@@ -55,7 +55,9 @@ fun AppNavigation() {
             DashboardScreen(onNavigateToSimulator = { navController.navigate("simulator") })
         }
         composable("simulator") { // <- NUEVA PARADA
-            SimulatorScreen()
+            // Le pasamos la función para que la flecha hacia atrás funcione
+            SimulatorScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }
+
