@@ -90,9 +90,9 @@ PreForge/
 
 ## ✅ TODO (próximos pasos)
 
-- [ ] Integrar subida real de archivos (PDF/DOCX/TXT)
-- [ ] Conectar el flujo de IA que genera las preguntas
-- [ ] Persistencia de simuladores y resultados
+- [✅] Integrar subida real de archivos (PDF/DOCX/TXT)
+- [✅] Conectar el flujo de IA que genera las preguntas
+- [✅] Persistencia de simuladores y resultados
 - [ ] Autenticación real (login/registro)
 
 ---
