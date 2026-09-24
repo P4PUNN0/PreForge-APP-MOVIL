@@ -9,9 +9,9 @@
               <option name="connection">
                 <ConnectionSetting>
                   <option name="appId" value="com.example.preforge" />
-                  <option name="mobileSdkAppId" value="1:278381116128:android:1e5b536d6e8e55d3592e85" />
-                  <option name="projectId" value="preforge-5cac0" />
-                  <option name="projectNumber" value="278381116128" />
+                  <option name="mobileSdkAppId" value="1:408556775852:android:ef003be9da583f4f6f7209" />
+                  <option name="projectId" value="prepforge-f1fdf" />
+                  <option name="projectNumber" value="408556775852" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

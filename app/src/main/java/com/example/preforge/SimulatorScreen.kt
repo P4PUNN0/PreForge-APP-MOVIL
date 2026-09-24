@@ -1,13 +1,16 @@
 package com.example.preforge
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -15,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -25,15 +30,131 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
-fun SimulatorScreen(questions: List<Question> = emptyList()) {
+fun SimulatorScreen(
+    questions: List<Question> = emptyList(),
+    onNavigateToMenu: () -> Unit = {}
+) {
     if (questions.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundGreen)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            CircularProgressIndicator(
+            Text(
+                text = "No hay preguntas para mostrar",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
                 color = DarkGreen
             )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Genera un examen o carga uno guardado desde la pantalla de exámenes.",
+                fontSize = 14.sp,
+                color = PrimaryGreen,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = onNavigateToMenu,
+                colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Volver al menú", color = Color.White)
+            }
+        }
+        return
+    }
+
+    // Detectar si el primer elemento es un mensaje de error de API o configuración
+    val firstQuestionText = questions.firstOrNull()?.questionText ?: ""
+    val isApiError = firstQuestionText.contains("Error", ignoreCase = true) ||
+            firstQuestionText.contains("API", ignoreCase = true) ||
+            firstQuestionText.contains("Key", ignoreCase = true) ||
+            firstQuestionText.contains("Fallo", ignoreCase = true)
+
+    if (isApiError) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundGreen)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Logo en la parte superior izquierda para regresar al menú
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToMenu() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_preforge_bolt),
+                    contentDescription = "Regresar al Menú",
+                    colorFilter = ColorFilter.tint(DarkGreen),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            Surface(
+                color = Color.White,
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, Color(0xFFC62828)),
+                shadowElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Error",
+                        tint = Color(0xFFC62828),
+                        modifier = Modifier.size(48.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Atención",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC62828)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = firstQuestionText,
+                        fontSize = 15.sp,
+                        color = PrimaryGreen,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    Button(
+                        onClick = onNavigateToMenu,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "Regresar al Menú Principal",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
         return
     }
@@ -60,7 +181,7 @@ fun SimulatorScreen(questions: List<Question> = emptyList()) {
 
     val minutes = timeLeftInSeconds / 60
     val seconds = timeLeftInSeconds % 60
-    val timeFormatted = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    val timeFormatted = String.format(Locale.ROOT, "%02d:%02d", minutes, seconds)
 
     val totalQuestions = questions.size
 
@@ -112,17 +233,29 @@ fun SimulatorScreen(questions: List<Question> = emptyList()) {
                 .fillMaxSize()
                 .background(BackgroundGreen)
                 .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // Logo / Icono en la parte superior izquierda para regresar al menú
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToMenu() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_preforge_bolt),
+                    contentDescription = "Regresar al Menú",
+                    colorFilter = ColorFilter.tint(DarkGreen),
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
             Surface(
                 color = Color.White,
                 shape = RoundedCornerShape(24.dp),
                 border = BorderStroke(1.dp, LightGreen),
                 shadowElevation = 4.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -159,7 +292,7 @@ fun SimulatorScreen(questions: List<Question> = emptyList()) {
                         color = PrimaryGreen
                     )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
                     Button(
                         onClick = {
@@ -183,8 +316,28 @@ fun SimulatorScreen(questions: List<Question> = emptyList()) {
                             fontWeight = FontWeight.Bold
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedButton(
+                        onClick = onNavigateToMenu,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        border = BorderStroke(1.5.dp, DarkGreen),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "Volver al Menú",
+                            color = DarkGreen,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     } else {
         // --- PANTALLA DE PREGUNTAS Y RESPUESTAS ---
@@ -203,9 +356,17 @@ fun SimulatorScreen(questions: List<Question> = emptyList()) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Description, contentDescription = "Pregunta", tint = DarkGreen)
-                    Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onNavigateToMenu() }
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_preforge_bolt),
+                        contentDescription = "Regresar al Menú",
+                        colorFilter = ColorFilter.tint(DarkGreen),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Pregunta ${currentQuestionIndex + 1}/$totalQuestions",
                         fontWeight = FontWeight.Bold,

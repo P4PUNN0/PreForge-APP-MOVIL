@@ -3,7 +3,6 @@ package com.example.preforge
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,12 +29,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.preforge.data.local.AppDatabase
-import com.example.preforge.data.local.QuestionEntity
+import com.example.preforge.data.local.ExamWithQuestions
 import com.example.preforge.data.local.toQuestion
 import com.example.preforge.ui.theme.*
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-data class BottomNavItem(
+private data class BottomNavItem(
     val route: String,
     val title: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
@@ -43,6 +46,7 @@ data class BottomNavItem(
 
 @Composable
 fun MainScreen(
+    userId: String = "local-user",
     userName: String = "Estudiante",
     onNavigateToSimulator: (List<Question>) -> Unit = {},
     onLogout: () -> Unit = {}
@@ -97,18 +101,22 @@ fun MainScreen(
         ) {
             when (currentTab) {
                 "home" -> HomeScreen(
+                    userId = userId,
                     userName = userName,
                     onNavigateToUpload = { currentTab = "upload" },
                     onNavigateToExams = { currentTab = "exams" }
                 )
                 "upload" -> DashboardScreen(
+                    userId = userId,
                     userName = userName,
                     onNavigateToSimulator = onNavigateToSimulator
                 )
                 "exams" -> ExamsScreen(
+                    userId = userId,
                     onNavigateToSimulator = onNavigateToSimulator
                 )
                 "profile" -> ProfileScreen(
+                    userId = userId,
                     userName = userName,
                     onLogout = onLogout
                 )
@@ -117,31 +125,29 @@ fun MainScreen(
     }
 }
 
-// --- PANTALLA: INICIO (HOME) ---
 @Composable
-fun HomeScreen(
+private fun HomeScreen(
+    userId: String,
     userName: String,
     onNavigateToUpload: () -> Unit,
     onNavigateToExams: () -> Unit
 ) {
     val context = LocalContext.current
     val isPreview = LocalInspectionMode.current
-    val savedQuestionsFlow = remember(isPreview) {
+    val examCountFlow = remember(userId, isPreview) {
         if (!isPreview) {
             try {
-                AppDatabase.getDatabase(context).questionDao().getAllQuestions()
-            } catch (e: Exception) {
-                kotlinx.coroutines.flow.flowOf(emptyList())
+                AppDatabase.getDatabase(context)
+                    .examDao()
+                    .observeExamCount(userId)
+            } catch (exception: Exception) {
+                flowOf(0)
             }
         } else {
-            kotlinx.coroutines.flow.flowOf(
-                listOf(
-                    QuestionEntity(id = 1, questionText = "Pregunta de muestra", options = listOf("A", "B"), correctAnswer = "A")
-                )
-            )
+            flowOf(1)
         }
     }
-    val savedQuestions by savedQuestionsFlow.collectAsState(initial = emptyList())
+    val examCount by examCountFlow.collectAsState(initial = 0)
 
     Column(
         modifier = Modifier
@@ -149,7 +155,6 @@ fun HomeScreen(
             .background(BackgroundGreen)
             .padding(24.dp)
     ) {
-        // Banner de bienvenida
         Surface(
             color = DarkGreen,
             shape = RoundedCornerShape(20.dp),
@@ -164,7 +169,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Preparado para convertir tus apuntes en simuladores de examen de alta precisión.",
+                    text = "Tus apuntes, tus exámenes y tu progreso en un solo lugar.",
                     fontSize = 13.sp,
                     color = LightGreen
                 )
@@ -173,7 +178,6 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Tarjeta de estadísticas rápidas Room
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -188,9 +192,14 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(text = "Estadísticas Local (Room)", fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
                     Text(
-                        text = "${savedQuestions.size} Preguntas en memoria",
+                        text = "Mis exámenes guardados",
+                        fontSize = 12.sp,
+                        color = PrimaryGreen,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "$examCount en Room",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkGreen
@@ -211,15 +220,13 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Acciones Rápidas",
+            text = "Acciones rápidas",
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             color = DarkGreen
         )
-
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Opción 1: Generar Nuevo Examen
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -236,20 +243,20 @@ fun HomeScreen(
             ) {
                 Icon(
                     imageVector = Icons.Default.CloudUpload,
-                    contentDescription = "Subir",
+                    contentDescription = "Subir apuntes",
                     tint = DarkGreen,
                     modifier = Modifier.size(36.dp)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Subir Archivo y Generar IA",
+                        text = "Subir archivo y generar IA",
                         fontWeight = FontWeight.Bold,
                         color = DarkGreen,
                         fontSize = 15.sp
                     )
                     Text(
-                        text = "Sube PDFs, Word o TXT para crear examen",
+                        text = "Se guardará automáticamente en tu usuario",
                         fontSize = 12.sp,
                         color = PrimaryGreen
                     )
@@ -259,7 +266,6 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Opción 2: Practicar con Guardados
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -283,13 +289,13 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Ver Exámenes Guardados",
+                        text = "Ver mis exámenes",
                         fontWeight = FontWeight.Bold,
                         color = DarkGreen,
                         fontSize = 15.sp
                     )
                     Text(
-                        text = "Repasa las preguntas guardadas en tu telefono.",
+                        text = "Abre cualquier examen guardado en tu dispositivo",
                         fontSize = 12.sp,
                         color = PrimaryGreen
                     )
@@ -299,39 +305,47 @@ fun HomeScreen(
     }
 }
 
-// --- PANTALLA: EXÁMENES (EXAMS) ---
 @Composable
-fun ExamsScreen(
+private fun ExamsScreen(
+    userId: String,
     onNavigateToSimulator: (List<Question>) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val isPreview = LocalInspectionMode.current
-    val savedQuestionsFlow = remember(isPreview) {
+    val examsFlow = remember(userId, isPreview) {
         if (!isPreview) {
             try {
-                AppDatabase.getDatabase(context).questionDao().getAllQuestions()
-            } catch (e: Exception) {
-                kotlinx.coroutines.flow.flowOf(emptyList())
+                AppDatabase.getDatabase(context)
+                    .examDao()
+                    .observeExamsForUser(userId)
+            } catch (exception: Exception) {
+                flowOf(emptyList<ExamWithQuestions>())
             }
         } else {
-            kotlinx.coroutines.flow.flowOf(
+            flowOf(
                 listOf(
-                    QuestionEntity(
-                        id = 1,
-                        questionText = "¿Cuál es la capital de Francia?",
-                        options = listOf("París", "Madrid", "Roma", "Berlín"),
-                        correctAnswer = "París"
+                    ExamWithQuestions(
+                        exam = com.example.preforge.data.local.ExamEntity(
+                            title = "Biología celular",
+                            userId = userId,
+                            ownerName = "Estudiante",
+                            questionCount = 2
+                        ),
+                        questions = listOf(
+                            com.example.preforge.data.local.QuestionEntity(
+                                questionText = "¿Cuál es la función de la mitocondria?",
+                                options = listOf("Producir ATP", "Almacenar ADN"),
+                                correctAnswer = "Producir ATP",
+                                examId = 1
+                            )
+                        )
                     )
                 )
             )
         }
     }
-    val savedQuestionsEntities by savedQuestionsFlow.collectAsState(initial = emptyList())
-
-    val questionsList = remember(savedQuestionsEntities) {
-        savedQuestionsEntities.map { it.toQuestion() }
-    }
+    val exams by examsFlow.collectAsState(initial = emptyList())
 
     Column(
         modifier = Modifier
@@ -340,64 +354,90 @@ fun ExamsScreen(
             .padding(24.dp)
     ) {
         Text(
-            text = "Banco de Preguntas (Room)",
+            text = "Mis exámenes",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = DarkGreen
         )
         Text(
-            text = "Preguntas almacenadas localmente en la base de datos de tu dispositivo.",
+            text = "Cada examen pertenece a tu usuario y queda guardado en Room.",
             fontSize = 13.sp,
             color = PrimaryGreen
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (questionsList.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Button(
-                    onClick = { onNavigateToSimulator(questionsList) },
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Iniciar Examen (${questionsList.size})", fontSize = 14.sp)
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            try {
-                                AppDatabase.getDatabase(context).questionDao().deleteAll()
-                                Toast.makeText(context, "Base de datos vaciada", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    },
-                    modifier = Modifier.height(48.dp),
-                    border = BorderStroke(1.dp, Color(0xFFC62828)),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFC62828))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
+        if (exams.isNotEmpty()) {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(savedQuestionsEntities) { entity ->
-                    QuestionItemCard(entity = entity)
+                items(exams, key = { it.exam.id }) { examWithQuestions ->
+                    ExamCard(
+                        examWithQuestions = examWithQuestions,
+                        onStart = {
+                            onNavigateToSimulator(
+                                examWithQuestions.questions.map { it.toQuestion() }
+                            )
+                        },
+                        onDelete = {
+                            coroutineScope.launch {
+                                try {
+                                    AppDatabase.getDatabase(context)
+                                        .examDao()
+                                        .deleteExam(examWithQuestions.exam.id, userId)
+                                    Toast.makeText(
+                                        context,
+                                        "Examen eliminado",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } catch (exception: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo eliminar el examen",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    )
+                }
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    AppDatabase.getDatabase(context)
+                                        .examDao()
+                                        .deleteAllForUser(userId)
+                                    Toast.makeText(
+                                        context,
+                                        "Tus exámenes fueron eliminados",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } catch (exception: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudieron eliminar los exámenes",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        border = BorderStroke(1.dp, Color(0xFFC62828)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = Color(0xFFC62828)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Borrar todos mis exámenes", color = Color(0xFFC62828))
+                    }
                 }
             }
         } else {
@@ -406,7 +446,7 @@ fun ExamsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Aún no hay preguntas guardadas en Room.\n\nGenera un examen desde la sección 'Subir' para guardarlas aquí.",
+                    text = "Aún no tienes exámenes guardados.\n\nGenera uno desde la sección Subir.",
                     textAlign = TextAlign.Center,
                     color = PrimaryGreen,
                     fontSize = 14.sp
@@ -417,7 +457,84 @@ fun ExamsScreen(
 }
 
 @Composable
-fun QuestionItemCard(entity: QuestionEntity) {
+private fun ExamCard(
+    examWithQuestions: ExamWithQuestions,
+    onStart: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val exam = examWithQuestions.exam
+    val formattedDate = remember(exam.createdAt) {
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            .format(Date(exam.createdAt))
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, LightGreen)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = exam.title,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkGreen,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "$formattedDate · ${examWithQuestions.questions.size} preguntas",
+                        fontSize = 12.sp,
+                        color = PrimaryGreen
+                    )
+                    exam.sourceFileName?.let { source ->
+                        Text(
+                            text = "Archivo: $source",
+                            fontSize = 11.sp,
+                            color = PrimaryGreen,
+                            maxLines = 1
+                        )
+                    }
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Eliminar examen",
+                        tint = Color(0xFFC62828)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Guardado por: ${exam.ownerName.ifBlank { exam.userId }}",
+                fontSize = 11.sp,
+                color = PrimaryGreen
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onStart,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Iniciar examen")
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestionItemCard(entity: com.example.preforge.data.local.QuestionEntity) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -446,9 +563,9 @@ fun QuestionItemCard(entity: QuestionEntity) {
     }
 }
 
-// --- PANTALLA: PERFIL (PROFILE) ---
 @Composable
-fun ProfileScreen(
+private fun ProfileScreen(
+    userId: String,
     userName: String,
     onLogout: () -> Unit
 ) {
@@ -485,9 +602,10 @@ fun ProfileScreen(
             color = DarkGreen
         )
         Text(
-            text = "Estudiante PrepForge",
-            fontSize = 14.sp,
-            color = PrimaryGreen
+            text = "Usuario: $userId",
+            fontSize = 12.sp,
+            color = PrimaryGreen,
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -499,22 +617,18 @@ fun ProfileScreen(
             border = BorderStroke(1.dp, LightGreen)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Información del Sistema", fontWeight = FontWeight.Bold, color = DarkGreen, fontSize = 16.sp)
+                Text(
+                    text = "Información de tu cuenta",
+                    fontWeight = FontWeight.Bold,
+                    color = DarkGreen,
+                    fontSize = 16.sp
+                )
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Almacenamiento:", fontSize = 14.sp, color = PrimaryGreen)
-                    Text("Room SQLite", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
-                }
+                ProfileInfoRow("Almacenamiento", "Room SQLite")
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Base de Datos:", fontSize = 14.sp, color = PrimaryGreen)
-                    Text("preforge_database", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
-                }
+                ProfileInfoRow("Aislamiento", "Por usuario")
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IA Engine:", fontSize = 14.sp, color = PrimaryGreen)
-                    Text("Gemini 3.6 Flash", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
-                }
+                ProfileInfoRow("Estado", "Sesión local protegida")
             }
         }
 
@@ -528,10 +642,26 @@ fun ProfileScreen(
             border = BorderStroke(1.5.dp, Color(0xFFC62828)),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Cerrar Sesión", color = Color(0xFFC62828), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Cerrar Sesión",
+                color = Color(0xFFC62828),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun ProfileInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 14.sp, color = PrimaryGreen)
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
     }
 }
 
@@ -539,6 +669,9 @@ fun ProfileScreen(
 @Composable
 fun MainScreenPreview() {
     PreForgeTheme {
-        MainScreen(userName = "Estudiante")
+        MainScreen(
+            userId = "preview-user",
+            userName = "Estudiante"
+        )
     }
 }

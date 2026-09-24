@@ -1,7 +1,5 @@
 package com.example.preforge
 
-import android.app.Activity
-import android.content.Intent // Importación crucial agregada
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
@@ -17,145 +15,69 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue // Importación crucial agregada para "by remember"
-import androidx.compose.runtime.setValue // Importación crucial agregada para "by remember"
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.preforge.data.local.AppDatabase
-import com.example.preforge.data.local.toEntity
+import com.example.preforge.data.local.ExamEntity
 import com.example.preforge.data.local.toQuestion
+import com.example.preforge.data.local.toEntity
 import com.example.preforge.ui.theme.*
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-// --- LAUNCHER DE AUTENTICACIÓN GOOGLE + FIREBASE ---
-@Composable
-fun rememberGoogleSignInLauncher(
-    onSuccess: (String) -> Unit,
-    onError: (String) -> Unit
-): () -> Unit {
-    val context = LocalContext.current
-    val isPreview = LocalInspectionMode.current
-    if (isPreview) return {}
-    val auth = remember {
-        try { Firebase.auth } catch (e: Exception) { null }
-    }
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)!!
-                val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-
-                auth?.signInWithCredential(credential)
-                    ?.addOnCompleteListener { authTask ->
-                        if (authTask.isSuccessful) {
-                            val user = auth.currentUser
-                            onSuccess(user?.displayName ?: user?.email ?: "Estudiante")
-                        } else {
-                            onError(authTask.exception?.localizedMessage ?: "Error al autenticar en Firebase")
-                        }
-                    }
-            } catch (e: ApiException) {
-                onError("Google Error (${e.statusCode}): ${e.message}")
-            } catch (e: Exception) {
-                onError(e.localizedMessage ?: "Error al seleccionar la cuenta")
-            }
-        } else {
-            onError("Inicio de sesión cancelado")
-        }
-    }
-
-    return {
-        try {
-            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resId == 0) {
-                Toast.makeText(context, "Realiza 'Sync Project with Gradle Files' en Android Studio", Toast.LENGTH_LONG).show()
-            } else {
-                val webClientId = context.getString(resId)
-                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestIdToken(webClientId)
-                    .requestEmail()
-                    .build()
-
-                val googleSignInClient = GoogleSignIn.getClient(context, gso)
-
-                googleSignInClient.signOut().addOnCompleteListener {
-                    // Ahora launcher.launch reconocerá correctamente el Intent
-                    launcher.launch(googleSignInClient.signInIntent)
-                }
-            }
-        } catch (e: Exception) {
-            Toast.makeText(context, "Error al lanzar Google Sign-In: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-        }
-    }
-}
-
-// --- PANTALLA PRINCIPAL ---
 @Composable
 fun DashboardScreen(
+    userId: String = "local-user",
     userName: String = "Estudiante",
     onNavigateToSimulator: (List<Question>) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val isPreview = LocalInspectionMode.current
-    val auth = remember {
-        if (!isPreview) {
-            try { Firebase.auth } catch (e: Exception) { null }
-        } else null
+    val contexto = LocalContext.current
+    val ambitoCorrutina = rememberCoroutineScope()
+    var nombreArchivoSeleccionado by remember { mutableStateOf<String?>(null) }
+    var uriArchivoSeleccionado by remember { mutableStateOf<Uri?>(null) }
+    var cantidadPreguntas by remember { mutableIntStateOf(5) }
+    var cargando by remember { mutableStateOf(false) }
+
+    val selectorArchivo = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { archivoUri ->
+            uriArchivoSeleccionado = archivoUri
+            val cursor = contexto.contentResolver.query(archivoUri, null, null, null, null)
+            val nombre = cursor?.use { valorCursor ->
+                val indiceNombre = valorCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (indiceNombre != -1 && valorCursor.moveToFirst()) {
+                    valorCursor.getString(indiceNombre)
+                } else {
+                    null
+                }
+            } ?: archivoUri.lastPathSegment
+            nombreArchivoSeleccionado = nombre ?: "Apuntes"
+        }
     }
 
-    var currentUserName by remember {
-        mutableStateOf(auth?.currentUser?.displayName ?: userName)
+    fun crearTituloExamen(): String {
+        val nombreBase = nombreArchivoSeleccionado
+            ?.substringBeforeLast('.')
+            ?.trim()
+            ?.takeIf { valor -> valor.isNotBlank() }
+            ?: "Examen"
+        val marcaTiempo = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            .format(Date())
+        return "$nombreBase - $marcaTiempo"
     }
-
-    val launchGoogleSignIn = rememberGoogleSignInLauncher(
-        onSuccess = { name ->
-            currentUserName = name
-            Toast.makeText(context, "¡Sesión iniciada como $name!", Toast.LENGTH_SHORT).show()
-        },
-        onError = { error ->
-            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
-        }
-    )
-
-    var selectedFileName by remember { mutableStateOf<String?>(null) }
-    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri ->
-            uri?.let {
-                selectedFileUri = it
-                val cursor = context.contentResolver.query(it, null, null, null, null)
-                val name = cursor?.use { c ->
-                    val nameIndex = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1 && c.moveToFirst()) c.getString(nameIndex) else null
-                } ?: it.path
-                selectedFileName = name
-            }
-        }
-    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -166,9 +88,7 @@ fun DashboardScreen(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { launchGoogleSignIn() }
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
                     imageVector = Icons.Default.Person,
@@ -178,20 +98,18 @@ fun DashboardScreen(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "¡Bienvenido/a!", fontSize = 12.sp, color = PrimaryGreen)
+                    Text(text = "Sesión activa", fontSize = 12.sp, color = PrimaryGreen)
                     Text(
-                        text = currentUserName,
+                        text = userName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkGreen
                     )
-                }
-                TextButton(onClick = { launchGoogleSignIn() }) {
                     Text(
-                        text = if (auth?.currentUser != null) "Cambiar" else "Google Sign-In",
-                        color = DarkGreen,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "ID: $userId",
+                        fontSize = 10.sp,
+                        color = PrimaryGreen,
+                        maxLines = 1
                     )
                 }
             }
@@ -205,7 +123,7 @@ fun DashboardScreen(
                 color = DarkGreen
             )
             Text(
-                text = "Sube archivos, fotos de tus libretas o texto y déjalos listos para el examen.",
+                text = "Cada simulador se guardará automáticamente en tu cuenta local.",
                 fontSize = 14.sp,
                 color = PrimaryGreen
             )
@@ -218,7 +136,7 @@ fun DashboardScreen(
                     .height(200.dp)
                     .border(2.dp, LightGreen, RoundedCornerShape(16.dp))
                     .clickable {
-                        filePickerLauncher.launch(
+                        selectorArchivo.launch(
                             arrayOf(
                                 "application/pdf",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -234,14 +152,14 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    if (selectedFileName != null) {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = "Subir",
-                            tint = DarkGreen,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "Subir apuntes",
+                        tint = if (nombreArchivoSeleccionado != null) DarkGreen else PrimaryGreen,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (nombreArchivoSeleccionado != null) {
                         Text(
                             text = "Archivo seleccionado:",
                             fontWeight = FontWeight.Bold,
@@ -250,7 +168,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = selectedFileName ?: "",
+                            text = nombreArchivoSeleccionado.orEmpty(),
                             fontWeight = FontWeight.Bold,
                             color = DarkGreen,
                             fontSize = 16.sp,
@@ -258,20 +176,13 @@ fun DashboardScreen(
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     } else {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = "Subir",
-                            tint = PrimaryGreen,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Arrastra o selecciona tus archivos",
                             fontWeight = FontWeight.Bold,
                             color = DarkGreen
                         )
                         Text(
-                            text = "Admite PDF, DOCX, TXT hasta 20 MB",
+                            text = "Admite PDF con OCR, DOCX y TXT hasta 20 MB",
                             fontSize = 12.sp,
                             color = PrimaryGreen
                         )
@@ -279,37 +190,110 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Text(
+                text = "Número de preguntas:",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = DarkGreen
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val opcionesCantidad = listOf(5, 10, 15, 20)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                opcionesCantidad.forEach { cantidad ->
+                    val estaSeleccionada = cantidadPreguntas == cantidad
+                    OutlinedButton(
+                        onClick = { cantidadPreguntas = cantidad },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (estaSeleccionada) DarkGreen else Color.White
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.5.dp,
+                            if (estaSeleccionada) DarkGreen else LightGreen
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "$cantidad",
+                            color = if (estaSeleccionada) Color.White else DarkGreen,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
-                    isLoading = true
-                    coroutineScope.launch {
-                        var fileTextContent = ""
-                        selectedFileUri?.let { uri ->
-                            try {
-                                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                                    BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                                        fileTextContent = reader.readText()
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                        if (fileTextContent.isBlank()) {
-                            fileTextContent = "Contenido simulado de apuntes de estudio."
-                        }
-
-                        val questions = AiEngine.generateQuestions(fileTextContent)
+                    cargando = true
+                    ambitoCorrutina.launch {
                         try {
-                            val db = AppDatabase.getDatabase(context)
-                            db.questionDao().insertAll(questions.map { it.toEntity() })
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                            val uriArchivo = uriArchivoSeleccionado
+                                ?: throw DocumentExtractionException(
+                                    "Selecciona un archivo antes de generar el simulador"
+                                )
+                            val textoArchivo = withContext(Dispatchers.IO) {
+                                DocumentTextExtractor.extract(
+                                    contexto = contexto,
+                                    uri = uriArchivo,
+                                    nombreArchivo = nombreArchivoSeleccionado
+                                )
+                            }
+
+                            val preguntas = withContext(Dispatchers.IO) {
+                                AiEngine.generateQuestions(textoArchivo, cantidadPreguntas)
+                            }
+                            val examen = ExamEntity(
+                                title = crearTituloExamen(),
+                                userId = userId,
+                                ownerName = userName,
+                                sourceFileName = nombreArchivoSeleccionado,
+                                questionCount = preguntas.size
+                            )
+
+                            withContext(Dispatchers.IO) {
+                                AppDatabase.getDatabase(contexto)
+                                    .examDao()
+                                    .insertExamWithQuestions(
+                                        exam = examen,
+                                        questions = preguntas.map { pregunta -> pregunta.toEntity() }
+                                    )
+                            }
+
+                            cargando = false
+                            Toast.makeText(
+                                contexto,
+                                "Examen guardado automáticamente en Room",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            onNavigateToSimulator(preguntas)
+                        } catch (excepcion: CancellationException) {
+                            cargando = false
+                            throw excepcion
+                        } catch (excepcion: Exception) {
+                            cargando = false
+                            val mensajeError = when (excepcion) {
+                                is DocumentExtractionException -> excepcion.message
+                                is QuestionGenerationException -> excepcion.message
+                                else -> null
+                            } ?: "Ocurrió un error inesperado. Inténtalo de nuevo"
+                            Toast.makeText(
+                                contexto,
+                                "No se pudo generar el simulador: $mensajeError",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
-                        isLoading = false
-                        onNavigateToSimulator(questions)
                     }
                 },
                 modifier = Modifier
@@ -317,30 +301,46 @@ fun DashboardScreen(
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = DarkGreen),
                 shape = RoundedCornerShape(12.dp),
-                enabled = !isLoading
+                enabled = !cargando && uriArchivoSeleccionado != null
             ) {
-                Text(text = "Generar Simulador", color = Color.White, fontSize = 16.sp)
+                Text(
+                    text = if (cargando) "Procesando y generando..." else "Generar Simulador",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(
                 onClick = {
-                    isLoading = true
-                    coroutineScope.launch {
+                    cargando = true
+                    ambitoCorrutina.launch {
                         try {
-                            val db = AppDatabase.getDatabase(context)
-                            val savedEntities = db.questionDao().getAllQuestionsList()
-                            val savedQuestions = savedEntities.map { it.toQuestion() }
-                            isLoading = false
-                            if (savedQuestions.isNotEmpty()) {
-                                onNavigateToSimulator(savedQuestions)
-                            } else {
-                                Toast.makeText(context, "No hay preguntas guardadas en Room", Toast.LENGTH_SHORT).show()
+                            val ultimoExamen = withContext(Dispatchers.IO) {
+                                AppDatabase.getDatabase(contexto)
+                                    .examDao()
+                                    .getLatestExamForUser(userId)
                             }
-                        } catch (e: Exception) {
-                            isLoading = false
-                            Toast.makeText(context, "Error al cargar desde Room: ${e.message}", Toast.LENGTH_SHORT).show()
+                            cargando = false
+                            if (ultimoExamen != null && ultimoExamen.questions.isNotEmpty()) {
+                                onNavigateToSimulator(
+                                    ultimoExamen.questions.map { pregunta -> pregunta.toQuestion() }
+                                )
+                            } else {
+                                Toast.makeText(
+                                    contexto,
+                                    "No hay exámenes guardados para este usuario",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        } catch (excepcion: Exception) {
+                            cargando = false
+                            Toast.makeText(
+                                contexto,
+                                "Error al cargar desde Room: ${excepcion.localizedMessage}",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 },
@@ -348,13 +348,19 @@ fun DashboardScreen(
                     .fillMaxWidth()
                     .height(52.dp),
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, DarkGreen),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                enabled = !cargando
             ) {
-                Text(text = "Cargar Examen Guardado (Room)", color = DarkGreen, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Cargar Último Examen (Room)",
+                    color = DarkGreen,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
-        if (isLoading) {
+        if (cargando) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -371,6 +377,6 @@ fun DashboardScreen(
 @Composable
 fun DashboardScreenPreview() {
     PreForgeTheme {
-        DashboardScreen(userName = "Estudiante")
+        DashboardScreen(userId = "preview-user", userName = "Estudiante")
     }
 }
