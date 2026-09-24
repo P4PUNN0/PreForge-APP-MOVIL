@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "278381116128",
+    "project_id": "preforge-5cac0",
+    "storage_bucket": "preforge-5cac0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278381116128:android:1e5b536d6e8e55d3592e85",
+        "android_client_info": {
+          "package_name": "com.example.preforge"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "278381116128-etfosdjjhqs8nipu4u4udd930e1kl6pa.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.preforge",
+            "certificate_hash": "a53d1184279839d697c56d9aa78ee46c9286ab79"
+          }
+        },
+        {
+          "client_id": "278381116128-6tc1cjg8svaj52d07da66cnek1u00vlu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASwK6LbX4Dd10kFWIJgaAxR3y1U5CTjwU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "278381116128-6tc1cjg8svaj52d07da66cnek1u00vlu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

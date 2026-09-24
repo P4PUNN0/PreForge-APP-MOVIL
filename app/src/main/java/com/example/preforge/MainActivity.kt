@@ -8,23 +8,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.preforge.ui.theme.PreForgeTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.preforge.ui.theme.PreForgeTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PreForgeTheme { // Usa el nombre real de tu tema
+            PreForgeTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
-                        // AQUÍ ARRANCAMOS EL MAPA DE RUTAS
                         AppNavigation()
                     }
                 }
@@ -34,28 +33,61 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-
-
-@Composable
 fun AppNavigation() {
     val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = "welcome") {
         composable("welcome") {
-            WelcomeScreen(onNavigateToDashboard = { navController.navigate("dashboard") })
+            WelcomeScreen(
+                onLoginSuccess = { userName ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("user_name", userName)
+                    navController.navigate("main") {
+                        popUpTo("welcome") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("main") {
+            val userName = navController.previousBackStackEntry?.savedStateHandle?.get<String>("user_name") ?: "Estudiante"
+            MainScreen(
+                userName = userName,
+                onNavigateToSimulator = { questions ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("questions_list", ArrayList(questions))
+                    navController.navigate("simulator")
+                },
+                onLogout = {
+                    navController.navigate("welcome") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
         }
         composable("dashboard") {
-            DashboardScreen(onNavigateToSimulator = { navController.navigate("simulator") })
+            val userName = navController.previousBackStackEntry?.savedStateHandle?.get<String>("user_name") ?: "Estudiante"
+            MainScreen(
+                userName = userName,
+                onNavigateToSimulator = { questions ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("questions_list", ArrayList(questions))
+                    navController.navigate("simulator")
+                },
+                onLogout = {
+                    navController.navigate("welcome") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
         }
-        composable("simulator") { // <- NUEVA PARADA
-            SimulatorScreen()
+        composable("simulator") {
+            val questions = navController.previousBackStackEntry?.savedStateHandle?.get<ArrayList<Question>>("questions_list") ?: emptyList<Question>()
+            SimulatorScreen(questions = questions)
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun AppNavigationPreview() {
+    PreForgeTheme {
+        WelcomeScreen(onLoginSuccess = {})
     }
 }
