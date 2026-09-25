@@ -598,19 +598,6 @@ Solicitamos ayuda de la IA para orientar e implementar el inicio de sesión con 
 
 En el estado actual del código, Firebase Auth gestiona las cuentas de los usuarios y Room/SQLite gestiona localmente los exámenes, las preguntas y el historial de repaso. La sincronización con una base de datos de Firebase en la nube queda como una etapa siguiente del proyecto.
 
-## 📄 Uso y datos sensibles
-
-Este README describe la implementación disponible actualmente en el repositorio. Las claves de Firebase y Gemini, los archivos de configuración privados y los datos personales no deben publicarse ni incluirse en commits.
-
-Dos avisos concretos sobre el estado del repositorio:
-
-- `app/google-services.json` está versionado en Git. Contiene identificadores de proyecto de Firebase, que no son secretos por sí mismos, pero identifican tu proyecto ante cualquiera. Sustitúyelo por uno propio antes de publicar y considera excluir `app/google-services.json` en `.gitignore` junto con un `google-services.json.example` con valores de marcador.
-- `local.properties` contiene `GEMINI_API_KEY` y está correctamente excluido mediante `.gitignore`. Verifica el historial antes de publicar si alguna vez se versionó por error.
-
-Las capturas de `screenshots/` se publican tal cual y contienen datos de una cuenta real: el nombre del usuario en `3-Dashboard.png`, `6-Perfil.png`, `7-ExamenesGuardados.png` y `8-CargadeDocumentos.png`, y su identificador de Firebase en `6-Perfil.png` y `8-CargadeDocumentos.png`. Si el repositorio pasa a ser público, conviene sustituirlas por capturas de una cuenta de prueba.
-
----
-
 <div align="center">
 
 Hecho con 💚 para estudiantes · **PreForge**
