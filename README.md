@@ -75,15 +75,15 @@ La navegación raíz se administra con `Navigation Compose` desde `MainActivity.
 
 ## 🖼️ Capturas de pantalla
 
-| Welcome | Login | Inicio |
+| Welcome | Inicio de sesión | Inicio |
 | :---: | :---: | :---: |
-| <img src="screenshots/welcome.png" width="180" alt="Pantalla de bienvenida"> | <img src="screenshots/login.png" width="180" alt="Opciones de inicio de sesión"> | <img src="screenshots/inicio.png" width="180" alt="Pantalla de inicio"> |
+| <img src="screenshots/1-Welcome.png" width="180" alt="Pantalla de bienvenida de PreForge"> | <img src="screenshots/2-InicioSesion.png" width="180" alt="Hoja de inicio de sesión con Google, correo e invitado"> | <img src="screenshots/3-Dashboard.png" width="180" alt="Pantalla de inicio con contador de exámenes y accesos rápidos"> |
 
-| Generar simulador | Exámenes guardados | Simulador | Resultados |
-| :---: | :---: | :---: | :---: |
-| <img src="screenshots/generar-simulador.png" width="180" alt="Pantalla para generar un simulador"> | <img src="screenshots/examenes-guardados.png" width="180" alt="Lista de exámenes guardados"> | <img src="screenshots/simulador.png" width="180" alt="Simulador de examen"> | <img src="screenshots/resultados.png" width="180" alt="Resultado del examen"> |
+| Subir apuntes | Simulador | Resultados | Exámenes | Perfil |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="screenshots/8-CargadeDocumentos.png" width="180" alt="Pantalla para subir apuntes, elegir imagen o número de preguntas"> | <img src="screenshots/4-Simulador.png" width="180" alt="Simulador con cronómetro, progreso y explicación inmediata"> | <img src="screenshots/5-Resultados.png" width="180" alt="Resultado con puntuación y repaso de respuestas incorrectas"> | <img src="screenshots/7-ExamenesGuardados.png" width="180" alt="Lista de exámenes guardados del usuario"> | <img src="screenshots/6-Perfil.png" width="180" alt="Perfil con información de cuenta y cierre de sesión"> |
 
-> Las capturas corresponden a una versión anterior de la interfaz: no muestran todavía la captura con cámara, los nuevos formatos de pregunta ni la sección de repaso. Antes de publicar el repositorio, sustituye las que muestren nombres, UID o archivos reales por datos ficticios.
+El recorrido completo es: **Welcome** → elegir método de entrada → **Inicio** → **Subir apuntes** (documento, imagen o cámara) → **Simulador** → **Resultados** con el repaso de errores, y desde **Exámenes** se recupera cualquiera de los simuladores guardados.
 
 ## 🛠️ Tecnologías
 
@@ -429,13 +429,14 @@ PreForge---APP-MOVIL/
 ├── gradlew
 ├── gradlew.bat
 ├── screenshots/
-│   ├── welcome.png
-│   ├── login.png
-│   ├── inicio.png
-│   ├── generar-simulador.png
-│   ├── examenes-guardados.png
-│   ├── simulador.png
-│   └── resultados.png
+│   ├── 1-Welcome.png
+│   ├── 2-InicioSesion.png
+│   ├── 3-Dashboard.png
+│   ├── 4-Simulador.png
+│   ├── 5-Resultados.png
+│   ├── 6-Perfil.png
+│   ├── 7-ExamenesGuardados.png
+│   └── 8-CargadeDocumentos.png
 ├── build.gradle.kts
 ├── settings.gradle.kts
 ├── gradle.properties
@@ -606,7 +607,7 @@ Dos avisos concretos sobre el estado del repositorio:
 - `app/google-services.json` está versionado en Git. Contiene identificadores de proyecto de Firebase, que no son secretos por sí mismos, pero identifican tu proyecto ante cualquiera. Sustitúyelo por uno propio antes de publicar y considera excluir `app/google-services.json` en `.gitignore` junto con un `google-services.json.example` con valores de marcador.
 - `local.properties` contiene `GEMINI_API_KEY` y está correctamente excluido mediante `.gitignore`. Verifica el historial antes de publicar si alguna vez se versionó por error.
 
-Además, las capturas de `screenshots/` pueden contener nombres, UID o archivos reales de quien las generó. Revísalas o reemplázalas por datos ficticios.
+Las capturas de `screenshots/` se publican tal cual y contienen datos de una cuenta real: el nombre del usuario en `3-Dashboard.png`, `6-Perfil.png`, `7-ExamenesGuardados.png` y `8-CargadeDocumentos.png`, y su identificador de Firebase en `6-Perfil.png` y `8-CargadeDocumentos.png`. Si el repositorio pasa a ser público, conviene sustituirlas por capturas de una cuenta de prueba.
 
 ---
 
