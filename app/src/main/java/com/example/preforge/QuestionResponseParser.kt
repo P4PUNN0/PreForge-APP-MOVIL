@@ -33,7 +33,7 @@ internal object QuestionResponseParser {
 
         return buildList(cantidadEsperada) {
             for (indice in 0 until arregloJson.length()) {
-                add(analizarPregunta(arregloJson.getJSONObject(indice), generadorAleatorio))
+                add(analizarPregunta(arregloJson.optJSONObject(indice), generadorAleatorio))
             }
         }
     }
@@ -54,17 +54,60 @@ internal object QuestionResponseParser {
     }
 
     private fun analizarPregunta(
-        objetoPregunta: JSONObject,
+        objetoPregunta: JSONObject?,
         generadorAleatorio: Random
     ): Question {
+        if (objetoPregunta == null) {
+            throw QuestionGenerationException("La IA devolvió un elemento de pregunta inválido")
+        }
         val textoPregunta = objetoPregunta.optString("questionText").trim()
-        val arregloOpciones = objetoPregunta.optJSONArray("options")
-            ?: throw QuestionGenerationException("Falta la lista de opciones de una pregunta")
-        val indiceRespuestaCorrecta = objetoPregunta.optInt("correctAnswerIndex", -1)
-
         if (textoPregunta.isBlank()) {
             throw QuestionGenerationException("La IA devolvió una pregunta vacía")
         }
+
+        val questionType = analizarTipoPregunta(objetoPregunta)
+        val pregunta = when (questionType) {
+            QuestionType.MULTIPLE_CHOICE -> analizarOpcionMultiple(
+                objetoPregunta = objetoPregunta,
+                textoPregunta = textoPregunta,
+                generadorAleatorio = generadorAleatorio
+            )
+
+            QuestionType.TRUE_FALSE -> analizarVerdaderoFalso(
+                objetoPregunta = objetoPregunta,
+                textoPregunta = textoPregunta
+            )
+
+            QuestionType.OPEN,
+            QuestionType.FILL_BLANKS -> analizarRespuestaAbierta(
+                objetoPregunta = objetoPregunta,
+                textoPregunta = textoPregunta,
+                questionType = questionType
+            )
+        }
+
+        val explicacion = objetoPregunta.optString("explanation").trim()
+        if (explicacion.isBlank()) {
+            throw QuestionGenerationException("Falta la explicación de una pregunta")
+        }
+        return pregunta.copy(explanation = explicacion)
+    }
+
+    private fun analizarTipoPregunta(objetoPregunta: JSONObject): QuestionType {
+        val valor = objetoPregunta.optString("questionType").trim()
+        if (valor.isBlank()) return QuestionType.MULTIPLE_CHOICE
+        return QuestionType.entries.firstOrNull { it.name.equals(valor, ignoreCase = true) }
+            ?: throw QuestionGenerationException("La IA devolvió un tipo de pregunta desconocido")
+    }
+
+    private fun analizarOpcionMultiple(
+        objetoPregunta: JSONObject,
+        textoPregunta: String,
+        generadorAleatorio: Random
+    ): Question {
+        val arregloOpciones = objetoPregunta.optJSONArray("options")
+            ?: throw QuestionGenerationException("Falta la lista de opciones de una pregunta")
+        val indiceRespuestaCorrecta = objetoPregunta.optInt("correctAnswerIndex", -1)
         if (arregloOpciones.length() != CANTIDAD_OPCIONES) {
             throw QuestionGenerationException("Una pregunta no tiene exactamente cuatro opciones")
         }
@@ -72,12 +115,7 @@ internal object QuestionResponseParser {
             throw QuestionGenerationException("Una pregunta tiene un índice de respuesta inválido")
         }
 
-        val opciones = buildList {
-            for (indiceOpcion in 0 until arregloOpciones.length()) {
-                add(arregloOpciones.optString(indiceOpcion).trim())
-            }
-        }
-
+        val opciones = arregloOpciones.toStringList()
         if (opciones.any(String::isBlank)) {
             throw QuestionGenerationException("La IA devolvió una opción vacía")
         }
@@ -91,12 +129,63 @@ internal object QuestionResponseParser {
             "${('A'.code + indice).toChar()}) $opcion"
         }
         val indiceCorrectaBarajada = opcionesBarajadas.indexOf(respuestaCorrecta)
-        val respuestaCorrectaEtiquetada = opcionesEtiquetadas[indiceCorrectaBarajada]
-
         return Question(
+            questionType = QuestionType.MULTIPLE_CHOICE,
             questionText = textoPregunta,
             options = opcionesEtiquetadas,
-            correctAnswer = respuestaCorrectaEtiquetada
+            correctAnswer = opcionesEtiquetadas[indiceCorrectaBarajada]
         )
+    }
+
+    private fun analizarVerdaderoFalso(
+        objetoPregunta: JSONObject,
+        textoPregunta: String
+    ): Question {
+        val opciones = objetoPregunta.optJSONArray("options")?.toStringList()
+            ?.takeIf { it.size == 2 }
+            ?: listOf("Verdadero", "Falso")
+        val indiceRespuestaCorrecta = objetoPregunta.optInt("correctAnswerIndex", -1)
+        val respuestaCorrecta = opciones.getOrNull(indiceRespuestaCorrecta)
+            ?: objetoPregunta.optString("correctAnswer").trim()
+        if (respuestaCorrecta !in opciones) {
+            throw QuestionGenerationException(
+                "La respuesta verdadero/falso no coincide con las opciones"
+            )
+        }
+        return Question(
+            questionType = QuestionType.TRUE_FALSE,
+            questionText = textoPregunta,
+            options = opciones,
+            correctAnswer = respuestaCorrecta
+        )
+    }
+
+    private fun analizarRespuestaAbierta(
+        objetoPregunta: JSONObject,
+        textoPregunta: String,
+        questionType: QuestionType
+    ): Question {
+        val respuestaCorrecta = objetoPregunta.optString("correctAnswer").trim()
+        if (respuestaCorrecta.isBlank()) {
+            throw QuestionGenerationException("Falta la respuesta de una pregunta abierta")
+        }
+        val respuestasAceptadas = objetoPregunta.optJSONArray("acceptedAnswers")
+            ?.toStringList()
+            ?.map(String::trim)
+            ?.filter(String::isNotBlank)
+            .orEmpty()
+        return Question(
+            questionType = questionType,
+            questionText = textoPregunta,
+            options = emptyList(),
+            correctAnswer = respuestaCorrecta,
+            acceptedAnswers = respuestasAceptadas
+        )
+    }
+
+    private fun JSONArray.toStringList(): List<String> = buildList(length()) {
+        for (indice in 0 until length()) {
+            add(optString(indice).trim())
+        }
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.preforge.data.local.AppDatabase
 import com.example.preforge.data.local.ExamWithQuestions
 import com.example.preforge.data.local.toQuestion
@@ -45,13 +47,14 @@ private data class BottomNavItem(
 )
 
 @Composable
-fun MainScreen(
+internal fun MainScreen(
     userId: String = "local-user",
     userName: String = "Estudiante",
     onNavigateToSimulator: (List<Question>) -> Unit = {},
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    dashboardViewModel: DashboardViewModel = viewModel()
 ) {
-    var currentTab by remember { mutableStateOf("home") }
+    var currentTab by rememberSaveable { mutableStateOf("home") }
 
     val items = listOf(
         BottomNavItem("home", "Inicio", Icons.Default.Home),
@@ -109,7 +112,8 @@ fun MainScreen(
                 "upload" -> DashboardScreen(
                     userId = userId,
                     userName = userName,
-                    onNavigateToSimulator = onNavigateToSimulator
+                    onNavigateToSimulator = onNavigateToSimulator,
+                    dashboardViewModel = dashboardViewModel
                 )
                 "exams" -> ExamsScreen(
                     userId = userId,
@@ -118,7 +122,10 @@ fun MainScreen(
                 "profile" -> ProfileScreen(
                     userId = userId,
                     userName = userName,
-                    onLogout = onLogout
+                    onLogout = {
+                        dashboardViewModel.cancelar()
+                        onLogout()
+                    }
                 )
             }
         }
@@ -250,13 +257,13 @@ private fun HomeScreen(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Subir archivo y generar IA",
+                        text = "Subir documento o imagen y generar IA",
                         fontWeight = FontWeight.Bold,
                         color = DarkGreen,
                         fontSize = 15.sp
                     )
                     Text(
-                        text = "Se guardará automáticamente en tu usuario",
+                        text = "Usa un archivo, una foto o una imagen de tu galería",
                         fontSize = 12.sp,
                         color = PrimaryGreen
                     )
@@ -495,7 +502,7 @@ private fun ExamCard(
                     )
                     exam.sourceFileName?.let { source ->
                         Text(
-                            text = "Archivo: $source",
+                            text = "Fuente: $source",
                             fontSize = 11.sp,
                             color = PrimaryGreen,
                             maxLines = 1
@@ -668,10 +675,12 @@ private fun ProfileInfoRow(label: String, value: String) {
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
+    val dashboardViewModel = remember { DashboardViewModel() }
     PreForgeTheme {
         MainScreen(
             userId = "preview-user",
-            userName = "Estudiante"
+            userName = "Estudiante",
+            dashboardViewModel = dashboardViewModel
         )
     }
 }

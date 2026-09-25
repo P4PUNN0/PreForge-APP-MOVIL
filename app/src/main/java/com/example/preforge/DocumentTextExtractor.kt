@@ -2,8 +2,12 @@ package com.example.preforge
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
+import android.os.Build
 import android.util.Log
+import androidx.exifinterface.media.ExifInterface
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -14,9 +18,12 @@ import com.tom_roush.pdfbox.rendering.ImageType
 import com.tom_roush.pdfbox.rendering.PDFRenderer
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
 import org.xml.sax.helpers.DefaultHandler
@@ -37,7 +44,8 @@ internal const val TAMANO_MAXIMO_DOCUMENTO_BYTES = 20L * 1024 * 1024
 internal enum class SupportedDocumentFormat {
     PDF,
     DOCX,
-    TEXT
+    TEXT,
+    IMAGE
 }
 
 internal class DocumentExtractionException(
@@ -54,19 +62,33 @@ internal interface OcrTextRecognizer {
 private class MlKitOcrTextRecognizer : OcrTextRecognizer {
     private val reconocedor = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    override suspend fun recognize(imagenBitmap: Bitmap): String =
-        suspendCancellableCoroutine { continuacion ->
-            reconocedor.process(InputImage.fromBitmap(imagenBitmap, 0))
-                .addOnSuccessListener { resultado ->
-                    if (continuacion.isActive) continuacion.resume(resultado.text)
-                }
-                .addOnFailureListener { excepcion ->
-                    if (continuacion.isActive) continuacion.resumeWithException(excepcion)
-                }
-                .addOnCanceledListener {
-                    continuacion.cancel()
-                }
+    override suspend fun recognize(imagenBitmap: Bitmap): String {
+        val tarea = reconocedor.process(InputImage.fromBitmap(imagenBitmap, 0))
+        val tareaTerminada = CompletableDeferred<Unit>()
+
+        return try {
+            suspendCancellableCoroutine { continuacion ->
+                tarea
+                    .addOnSuccessListener { resultado ->
+                        if (continuacion.isActive) continuacion.resume(resultado.text)
+                    }
+                    .addOnFailureListener { excepcion ->
+                        if (continuacion.isActive) continuacion.resumeWithException(excepcion)
+                    }
+                    .addOnCanceledListener {
+                        continuacion.cancel()
+                    }
+                    .addOnCompleteListener {
+                        tareaTerminada.complete(Unit)
+                    }
+            }
+        } finally {
+            // Task no expone cancel() en la versión usada; no liberamos el bitmap hasta que ML Kit termina.
+            withContext(NonCancellable) {
+                tareaTerminada.await()
+            }
         }
+    }
 
     override fun close() {
         reconocedor.close()
@@ -80,14 +102,29 @@ internal object DocumentTextExtractor {
     suspend fun extract(
         contexto: Context,
         uri: Uri,
-        nombreArchivo: String?
+        nombreArchivo: String?,
+        fuenteEsImagen: Boolean = false,
+        crearReconocedor: () -> OcrTextRecognizer = { MlKitOcrTextRecognizer() }
     ): String {
         val resolutor = contexto.contentResolver
         val tipoMime = resolutor.getType(uri)
-        val formato = detectDocumentFormat(nombreArchivo, tipoMime)
-        val tamanoDeclarado = resolutor.openAssetFileDescriptor(uri, "r")
-            ?.use { descriptor -> descriptor.length }
-            ?: -1L
+        val formato = if (fuenteEsImagen) {
+            SupportedDocumentFormat.IMAGE
+        } else {
+            detectDocumentFormat(nombreArchivo, tipoMime)
+        }
+        if (formato == SupportedDocumentFormat.IMAGE && esFormatoHeic(nombreArchivo, tipoMime)) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                throw DocumentExtractionException(
+                    "El formato HEIC no es compatible con este dispositivo. Elige una imagen JPG o PNG"
+                )
+            }
+        }
+        val tamanoDeclarado = runCatching {
+            resolutor.openAssetFileDescriptor(uri, "r")
+                ?.use { descriptor -> descriptor.length }
+                ?: -1L
+        }.getOrDefault(-1L)
         if (tamanoDeclarado > TAMANO_MAXIMO_DOCUMENTO_BYTES) {
             throw DocumentExtractionException("El archivo supera el límite de 20 MB")
         }
@@ -100,10 +137,11 @@ internal object DocumentTextExtractor {
             leerBytesDocumento(entrada)
         } ?: throw DocumentExtractionException("No se pudo abrir el archivo seleccionado")
 
-        return if (formato == SupportedDocumentFormat.PDF) {
-            exigirTextoExtraido(extractPdfTextWithOcr(bytesDocumento))
-        } else {
-            extractDocumentText(ByteArrayInputStream(bytesDocumento), formato)
+        return when (formato) {
+            SupportedDocumentFormat.PDF -> exigirTextoExtraido(extractPdfTextWithOcr(bytesDocumento))
+            SupportedDocumentFormat.IMAGE -> extractImageTextFromBytes(bytesDocumento, crearReconocedor)
+            SupportedDocumentFormat.DOCX,
+            SupportedDocumentFormat.TEXT -> extractDocumentText(ByteArrayInputStream(bytesDocumento), formato)
         }
     }
 
@@ -128,11 +166,26 @@ internal fun detectDocumentFormat(
         .orEmpty()
 
     return when {
-        tipoMimeNormalizado == TIPO_MIME_PDF || extensionArchivo == "pdf" -> SupportedDocumentFormat.PDF
-        tipoMimeNormalizado == TIPO_MIME_DOCX || extensionArchivo == "docx" -> SupportedDocumentFormat.DOCX
-        tipoMimeNormalizado == TIPO_MIME_TXT || extensionArchivo == "txt" -> SupportedDocumentFormat.TEXT
+        tipoMimeNormalizado == TIPO_MIME_PDF -> SupportedDocumentFormat.PDF
+        tipoMimeNormalizado == TIPO_MIME_DOCX -> SupportedDocumentFormat.DOCX
+        tipoMimeNormalizado == TIPO_MIME_TXT -> SupportedDocumentFormat.TEXT
+        tipoMimeNormalizado?.startsWith("image/") == true -> SupportedDocumentFormat.IMAGE
+        extensionArchivo == "pdf" -> SupportedDocumentFormat.PDF
+        extensionArchivo == "docx" -> SupportedDocumentFormat.DOCX
+        extensionArchivo == "txt" -> SupportedDocumentFormat.TEXT
+        extensionArchivo in EXTENSIONES_IMAGEN -> SupportedDocumentFormat.IMAGE
         else -> throw DocumentExtractionException("El formato del archivo no es compatible")
     }
+}
+
+private fun esFormatoHeic(nombreArchivo: String?, tipoMime: String?): Boolean {
+    val mimeNormalizado = tipoMime?.trim()?.lowercase(Locale.ROOT)
+    val extension = nombreArchivo
+        ?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.trim()
+        ?.lowercase(Locale.ROOT)
+        .orEmpty()
+    return mimeNormalizado in MIME_HEIC || extension in EXTENSIONES_HEIC
 }
 
 internal fun extractDocumentText(
@@ -144,6 +197,9 @@ internal fun extractDocumentText(
             SupportedDocumentFormat.PDF -> extractPdfText(entrada)
             SupportedDocumentFormat.DOCX -> extractDocxText(entrada)
             SupportedDocumentFormat.TEXT -> entrada.bufferedReader(Charsets.UTF_8).readText()
+            SupportedDocumentFormat.IMAGE -> throw DocumentExtractionException(
+                "Las imágenes deben procesarse mediante OCR"
+            )
         }
     } catch (excepcion: DocumentExtractionException) {
         throw excepcion
@@ -155,6 +211,149 @@ internal fun extractDocumentText(
     }
 
     return exigirTextoExtraido(textoExtraido)
+}
+
+internal suspend fun extractImageTextWithOcr(
+    imagenBitmap: Bitmap,
+    crearReconocedor: () -> OcrTextRecognizer = { MlKitOcrTextRecognizer() }
+): String {
+    var reconocedor: OcrTextRecognizer? = null
+    return try {
+        currentCoroutineContext().ensureActive()
+        val reconocedorActivo = reconocedor ?: crearReconocedor().also { reconocedor = it }
+        exigirTextoExtraido(
+            texto = reconocedorActivo.recognize(imagenBitmap),
+            mensajeSiVacio = "No se encontró texto legible en la imagen"
+        )
+    } catch (excepcion: CancellationException) {
+        throw excepcion
+    } catch (excepcion: DocumentExtractionException) {
+        throw excepcion
+    } catch (excepcion: OutOfMemoryError) {
+        throw DocumentExtractionException(
+            "La imagen es demasiado grande para procesarla en este dispositivo",
+            excepcion
+        )
+    } catch (excepcion: Exception) {
+        throw DocumentExtractionException(
+            "No se pudo completar el OCR de la imagen",
+            excepcion
+        )
+    } finally {
+        runCatching { reconocedor?.close() }
+    }
+}
+
+internal suspend fun extractImageTextFromBytes(
+    bytesImagen: ByteArray,
+    crearReconocedor: () -> OcrTextRecognizer = { MlKitOcrTextRecognizer() }
+): String {
+    val imagenBitmap = try {
+        decodificarImagen(bytesImagen)
+    } catch (excepcion: DocumentExtractionException) {
+        throw excepcion
+    } catch (excepcion: OutOfMemoryError) {
+        throw DocumentExtractionException(
+            "La imagen es demasiado grande para procesarla en este dispositivo",
+            excepcion
+        )
+    } catch (excepcion: Exception) {
+        throw DocumentExtractionException(
+            "No se pudo abrir la imagen seleccionada",
+            excepcion
+        )
+    }
+
+    return try {
+        extractImageTextWithOcr(imagenBitmap, crearReconocedor)
+    } finally {
+        if (!imagenBitmap.isRecycled) imagenBitmap.recycle()
+    }
+}
+
+private fun decodificarImagen(bytesImagen: ByteArray): Bitmap {
+    if (bytesImagen.isEmpty()) {
+        throw DocumentExtractionException("La imagen seleccionada está vacía")
+    }
+
+    val opcionesMedida = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytesImagen, 0, bytesImagen.size, opcionesMedida)
+    if (opcionesMedida.outWidth <= 0 || opcionesMedida.outHeight <= 0) {
+        throw DocumentExtractionException("No se pudo leer la imagen seleccionada")
+    }
+
+    val opcionesDecodificacion = BitmapFactory.Options().apply {
+        inSampleSize = calcularMuestraImagen(opcionesMedida.outWidth, opcionesMedida.outHeight)
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    val imagenBitmap = BitmapFactory.decodeByteArray(
+        bytesImagen,
+        0,
+        bytesImagen.size,
+        opcionesDecodificacion
+    ) ?: throw DocumentExtractionException("No se pudo leer la imagen seleccionada")
+
+    return aplicarOrientacionImagen(
+        imagenBitmap,
+        leerOrientacionImagen(bytesImagen)
+    )
+}
+
+private fun calcularMuestraImagen(ancho: Int, alto: Int): Int {
+    var muestra = 1
+    while (
+        (ancho.toLong() / muestra) * (alto.toLong() / muestra) > MAX_PIXELES_IMAGEN_OCR
+    ) {
+        muestra *= 2
+    }
+    return muestra
+}
+
+private fun leerOrientacionImagen(bytesImagen: ByteArray): Int {
+    val entrada = ByteArrayInputStream(bytesImagen)
+    return try {
+        ExifInterface(entrada).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+    } catch (_: Exception) {
+        ExifInterface.ORIENTATION_NORMAL
+    } finally {
+        entrada.close()
+    }
+}
+
+private fun aplicarOrientacionImagen(imagenBitmap: Bitmap, orientacion: Int): Bitmap {
+    val matriz = Matrix()
+    when (orientacion) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matriz.postScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matriz.postRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matriz.postScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matriz.postRotate(90f)
+            matriz.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> matriz.postRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matriz.postRotate(270f)
+            matriz.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> matriz.postRotate(270f)
+    }
+
+    if (matriz.isIdentity) return imagenBitmap
+
+    val imagenOrientada = Bitmap.createBitmap(
+        imagenBitmap,
+        0,
+        0,
+        imagenBitmap.width,
+        imagenBitmap.height,
+        matriz,
+        true
+    )
+    if (imagenOrientada !== imagenBitmap) imagenBitmap.recycle()
+    return imagenOrientada
 }
 
 private fun extractPdfText(entrada: InputStream): String =
@@ -404,18 +603,39 @@ private fun normalizarTextoExtraido(texto: String): String =
         .filter(String::isNotBlank)
         .joinToString("\n")
 
-private fun exigirTextoExtraido(texto: String): String =
+private fun exigirTextoExtraido(
+    texto: String,
+    mensajeSiVacio: String = "No se encontró texto legible en el archivo"
+): String =
     normalizarTextoExtraido(texto).takeIf(String::isNotBlank)
-        ?: throw DocumentExtractionException("No se encontró texto legible en el archivo")
+        ?: throw DocumentExtractionException(mensajeSiVacio)
 
 private const val TIPO_MIME_PDF = "application/pdf"
 private const val TIPO_MIME_DOCX =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 private const val TIPO_MIME_TXT = "text/plain"
+private val MIME_HEIC = setOf(
+    "image/heic",
+    "image/heif",
+    "image/x-heic",
+    "image/x-heif"
+)
+private val EXTENSIONES_HEIC = setOf("heic", "heif")
+private val EXTENSIONES_IMAGEN = setOf(
+    "jpg",
+    "jpeg",
+    "png",
+    "webp",
+    "heic",
+    "heif",
+    "bmp",
+    "gif"
+)
 private const val ENTRADA_DOCUMENTO_DOCX = "word/document.xml"
 private const val MIN_CARACTERES_PAGINA_NATIVA = 25
 private const val MAX_PAGINAS_OCR = 50
 private const val DPI_RENDERIZADO_OCR = 180.0
 private const val DPI_MINIMO_RENDERIZADO_OCR = 120.0
 private const val MAX_PIXELES_RENDERIZADO_OCR = 4_000_000.0
+private const val MAX_PIXELES_IMAGEN_OCR = 4_000_000.0
 private const val PUNTOS_POR_PULGADA = 72.0
